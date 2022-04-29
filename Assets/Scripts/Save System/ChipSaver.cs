@@ -1,33 +1,33 @@
-﻿using System.Collections.Generic;
-using System.IO;
-using System.Linq;
+﻿using System.IO;
 using UnityEngine;
 
-public static class ChipSaver {
+public static class ChipSaver
+{
+    private const bool usePrettyPrint = true;
 
-	const bool usePrettyPrint = true;
+    public static void Save(ChipEditor chipEditor)
+    {
+        var chipSaveData = new ChipSaveData(chipEditor);
 
-	public static void Save (ChipEditor chipEditor) {
-		ChipSaveData chipSaveData = new ChipSaveData (chipEditor);
+        // Generate new chip save string
+        var compositeChip = new SavedChip(chipSaveData);
+        var saveString = JsonUtility.ToJson(compositeChip, usePrettyPrint);
 
-		// Generate new chip save string
-		var compositeChip = new SavedChip (chipSaveData);
-		string saveString = JsonUtility.ToJson (compositeChip, usePrettyPrint);
+        // Generate save string for wire layout
+        var wiringSystem = new SavedWireLayout(chipSaveData);
+        var wiringSaveString = JsonUtility.ToJson(wiringSystem, usePrettyPrint);
 
-		// Generate save string for wire layout
-		var wiringSystem = new SavedWireLayout (chipSaveData);
-		string wiringSaveString = JsonUtility.ToJson (wiringSystem, usePrettyPrint);
+        // Write to file
+        var savePath = SaveSystem.GetPathToSaveFile(chipEditor.chipName);
+        using (var writer = new StreamWriter(savePath))
+        {
+            writer.Write(saveString);
+        }
 
-		// Write to file
-		string savePath = SaveSystem.GetPathToSaveFile (chipEditor.chipName);
-		using (StreamWriter writer = new StreamWriter (savePath)) {
-			writer.Write (saveString);
-		}
-
-		string wireLayoutSavePath = SaveSystem.GetPathToWireSaveFile (chipEditor.chipName);
-		using (StreamWriter writer = new StreamWriter (wireLayoutSavePath)) {
-			writer.Write (wiringSaveString);
-		}
-	}
-
+        var wireLayoutSavePath = SaveSystem.GetPathToWireSaveFile(chipEditor.chipName);
+        using (var writer = new StreamWriter(wireLayoutSavePath))
+        {
+            writer.Write(wiringSaveString);
+        }
+    }
 }

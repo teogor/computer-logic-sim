@@ -1,65 +1,60 @@
-﻿using System.Collections.Generic;
-using UnityEngine;
+﻿using UnityEngine;
 
-public class Simulation : MonoBehaviour {
+public class Simulation : MonoBehaviour
+{
+    private static Simulation instance;
 
-	public static int simulationFrame { get; private set; }
+    public float minStepTime = 0.075f;
+    private ChipEditor chipEditor;
+    private InputSignal[] inputSignals;
+    private float lastStepTime;
 
-	static Simulation instance;
-	InputSignal[] inputSignals;
-	ChipEditor chipEditor;
+    public static int simulationFrame { get; private set; }
 
-	public float minStepTime = 0.075f;
-	float lastStepTime;
+    private static Simulation Instance
+    {
+        get
+        {
+            if (!instance) instance = FindObjectOfType<Simulation>();
+            return instance;
+        }
+    }
 
-	void Awake () {
-		simulationFrame = 0;
-	}
+    private void Awake()
+    {
+        simulationFrame = 0;
+    }
 
-	void Update () {
-		if (Time.time - lastStepTime > minStepTime) {
-			lastStepTime = Time.time;
-			StepSimulation ();
-		}
-	}
+    private void Update()
+    {
+        if (Time.time - lastStepTime > minStepTime)
+        {
+            lastStepTime = Time.time;
+            StepSimulation();
+        }
+    }
 
-	void StepSimulation () {
-		simulationFrame++;
-		RefreshChipEditorReference ();
+    private void StepSimulation()
+    {
+        simulationFrame++;
+        RefreshChipEditorReference();
 
-		// Clear output signals
-		List<ChipSignal> outputSignals = chipEditor.outputsEditor.signals;
-		for (int i = 0; i < outputSignals.Count; i++) {
-			outputSignals[i].SetDisplayState (0);
-		}
+        // Clear output signals
+        var outputSignals = chipEditor.outputsEditor.signals;
+        for (var i = 0; i < outputSignals.Count; i++) outputSignals[i].SetDisplayState(0);
 
-		// Init chips
-		var allChips = chipEditor.chipInteraction.allChips;
-		for (int i = 0; i < allChips.Count; i++) {
-			allChips[i].InitSimulationFrame ();
-		}
+        // Init chips
+        var allChips = chipEditor.chipInteraction.allChips;
+        for (var i = 0; i < allChips.Count; i++) allChips[i].InitSimulationFrame();
 
-		// Process inputs
-		List<ChipSignal> inputSignals = chipEditor.inputsEditor.signals;
-		// Tell all signal generators to send their signal out
-		for (int i = 0; i < inputSignals.Count; i++) {
-			((InputSignal) inputSignals[i]).SendSignal ();
-		}
+        // Process inputs
+        var inputSignals = chipEditor.inputsEditor.signals;
+        // Tell all signal generators to send their signal out
+        for (var i = 0; i < inputSignals.Count; i++) ((InputSignal) inputSignals[i]).SendSignal();
+    }
 
-	}
-
-	void RefreshChipEditorReference () {
-		if (chipEditor == null) {
-			chipEditor = FindObjectOfType<ChipEditor> ();
-		}
-	}
-
-	static Simulation Instance {
-		get {
-			if (!instance) {
-				instance = FindObjectOfType<Simulation> ();
-			}
-			return instance;
-		}
-	}
+    private void RefreshChipEditorReference()
+    {
+        if (chipEditor == null) chipEditor = FindObjectOfType<ChipEditor>();
+    }
 }

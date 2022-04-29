@@ -1,19 +1,15 @@
-﻿using System.Collections;
-using System.Collections.Generic;
-using UnityEngine;
+﻿using System;
 
-[System.Serializable]
-public class SavedWireLayout {
+[Serializable]
+public class SavedWireLayout
+{
+    public SavedWire[] serializableWires;
 
-	public SavedWire[] serializableWires;
+    public SavedWireLayout(ChipSaveData chipSaveData)
+    {
+        var allWires = chipSaveData.wires;
+        serializableWires = new SavedWire[allWires.Length];
 
-	public SavedWireLayout (ChipSaveData chipSaveData) {
-		Wire[] allWires = chipSaveData.wires;
-		serializableWires = new SavedWire[allWires.Length];
-
-		for (int i = 0; i < allWires.Length; i++) {
-			serializableWires[i] = new SavedWire (chipSaveData, allWires[i]);
-		}
-
-	}
+        for (var i = 0; i < allWires.Length; i++) serializableWires[i] = new SavedWire(chipSaveData, allWires[i]);
+    }
 }

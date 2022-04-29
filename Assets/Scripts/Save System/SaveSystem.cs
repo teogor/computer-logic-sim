@@ -1,67 +1,70 @@
-﻿using System.IO;
+﻿using System.Diagnostics;
+using System.IO;
 using UnityEngine;
+using Debug = UnityEngine.Debug;
 
-public static class SaveSystem {
+public static class SaveSystem
+{
+    private const string fileExtension = ".txt";
 
-	static string activeProjectName = "Untitled";
-	const string fileExtension = ".txt";
+    private static string activeProjectName = "Untitled";
 
-	public static void SetActiveProject (string projectName) {
-		activeProjectName = projectName;
-	}
+    private static string CurrentSaveProfileDirectoryPath => Path.Combine(SaveDataDirectoryPath, activeProjectName);
 
-	public static void Init () {
-		// Create save directory (if doesn't exist already)
-		Directory.CreateDirectory (CurrentSaveProfileDirectoryPath);
-		Directory.CreateDirectory (CurrentSaveProfileWireLayoutDirectoryPath);
-	}
+    private static string CurrentSaveProfileWireLayoutDirectoryPath =>
+        Path.Combine(CurrentSaveProfileDirectoryPath, "WireLayout");
 
-	public static void LoadAll (Manager manager) {
-		// Load any saved chips
-		var sw = System.Diagnostics.Stopwatch.StartNew ();
-		string[] chipSavePaths = Directory.GetFiles (CurrentSaveProfileDirectoryPath, "*" + fileExtension);
-		ChipLoader.LoadAllChips (chipSavePaths, manager);
-		Debug.Log ("Load time: " + sw.ElapsedMilliseconds);
+    public static string SaveDataDirectoryPath
+    {
+        get
+        {
+            const string saveFolderName = "SaveData";
+            return Path.Combine(Application.persistentDataPath, saveFolderName);
+        }
+    }
 
-	}
+    public static void SetActiveProject(string projectName)
+    {
+        activeProjectName = projectName;
+    }
 
-	public static string GetPathToSaveFile (string saveFileName) {
-		return Path.Combine (CurrentSaveProfileDirectoryPath, saveFileName + fileExtension);
-	}
+    public static void Init()
+    {
+        // Create save directory (if doesn't exist already)
+        Directory.CreateDirectory(CurrentSaveProfileDirectoryPath);
+        Directory.CreateDirectory(CurrentSaveProfileWireLayoutDirectoryPath);
+    }
 
-	public static string GetPathToWireSaveFile (string saveFileName) {
-		return Path.Combine (CurrentSaveProfileWireLayoutDirectoryPath, saveFileName + fileExtension);
-	}
+    public static void LoadAll(Manager manager)
+    {
+        // Load any saved chips
+        var sw = Stopwatch.StartNew();
+        var chipSavePaths = Directory.GetFiles(CurrentSaveProfileDirectoryPath, "*" + fileExtension);
+        ChipLoader.LoadAllChips(chipSavePaths, manager);
+        Debug.Log("Load time: " + sw.ElapsedMilliseconds);
+    }
 
-	static string CurrentSaveProfileDirectoryPath {
-		get {
-			return Path.Combine (SaveDataDirectoryPath, activeProjectName);
-		}
-	}
+    public static string GetPathToSaveFile(string saveFileName)
+    {
+        return Path.Combine(CurrentSaveProfileDirectoryPath, saveFileName + fileExtension);
+    }
 
-	static string CurrentSaveProfileWireLayoutDirectoryPath {
-		get {
-			return Path.Combine (CurrentSaveProfileDirectoryPath, "WireLayout");
-		}
-	}
+    public static string GetPathToWireSaveFile(string saveFileName)
+    {
+        return Path.Combine(CurrentSaveProfileWireLayoutDirectoryPath, saveFileName + fileExtension);
+    }
 
-	public static string[] GetSaveNames () {
-		string[] savedProjectPaths = new string[0];
-		if (Directory.Exists (SaveDataDirectoryPath)) {
-			savedProjectPaths = Directory.GetDirectories (SaveDataDirectoryPath);
-		}
-		for (int i = 0; i < savedProjectPaths.Length; i++) {
-			string[] pathSections = savedProjectPaths[i].Split (Path.DirectorySeparatorChar);
-			savedProjectPaths[i] = pathSections[pathSections.Length - 1];
-		}
-		return savedProjectPaths;
-	}
+    public static string[] GetSaveNames()
+    {
+        var savedProjectPaths = new string[0];
+        if (Directory.Exists(SaveDataDirectoryPath))
+            savedProjectPaths = Directory.GetDirectories(SaveDataDirectoryPath);
+        for (var i = 0; i < savedProjectPaths.Length; i++)
+        {
+            var pathSections = savedProjectPaths[i].Split(Path.DirectorySeparatorChar);
+            savedProjectPaths[i] = pathSections[pathSections.Length - 1];
+        }
 
-	public static string SaveDataDirectoryPath {
-		get {
-			const string saveFolderName = "SaveData";
-			return Path.Combine (Application.persistentDataPath, saveFolderName);
-		}
-	}
-
+        return savedProjectPaths;
+    }
 }

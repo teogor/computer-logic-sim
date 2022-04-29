@@ -1,262 +1,288 @@
-﻿using System.Collections;
+﻿using System;
 using System.Collections.Generic;
-using TMPro;
 using UnityEngine;
 
-public class PinAndWireInteraction : InteractionHandler {
+public class PinAndWireInteraction : InteractionHandler
+{
+    public LayerMask pinMask;
+    public LayerMask wireMask;
+    public Transform wireHolder;
+    public Wire wirePrefab;
 
-	public event System.Action onConnectionChanged;
-	public event System.Action<Pin> onMouseOverPin;
-	public event System.Action<Pin> onMouseExitPin;
+    private State currentState;
+    private Wire highlightedWire;
+    private Pin pinUnderMouse;
+    private Dictionary<Pin, Wire> wiresByChipInputPin;
+    private Pin wireStartPin;
+    private Wire wireToPlace;
+    public List<Wire> allWires { get; private set; }
 
-	enum State { None, PlacingWire }
-	public LayerMask pinMask;
-	public LayerMask wireMask;
-	public Transform wireHolder;
-	public Wire wirePrefab;
+    private void Awake()
+    {
+        allWires = new List<Wire>();
+        wiresByChipInputPin = new Dictionary<Pin, Wire>();
+    }
 
-	State currentState;
-	Pin pinUnderMouse;
-	Pin wireStartPin;
-	Wire wireToPlace;
-	Wire highlightedWire;
-	Dictionary<Pin, Wire> wiresByChipInputPin;
-	public List<Wire> allWires { get; private set; }
+    public event Action onConnectionChanged;
+    public event Action<Pin> onMouseOverPin;
+    public event Action<Pin> onMouseExitPin;
 
-	void Awake () {
-		allWires = new List<Wire> ();
-		wiresByChipInputPin = new Dictionary<Pin, Wire> ();
-	}
+    public void Init(ChipInteraction chipInteraction, ChipInterfaceEditor inputEditor, ChipInterfaceEditor outputEditor)
+    {
+        chipInteraction.onDeleteChip += DeleteChipWires;
+        inputEditor.onDeleteChip += DeleteChipWires;
+        outputEditor.onDeleteChip += DeleteChipWires;
+    }
 
-	public void Init (ChipInteraction chipInteraction, ChipInterfaceEditor inputEditor, ChipInterfaceEditor outputEditor) {
-		chipInteraction.onDeleteChip += DeleteChipWires;
-		inputEditor.onDeleteChip += DeleteChipWires;
-		outputEditor.onDeleteChip += DeleteChipWires;
-	}
+    public override void OrderedUpdate()
+    {
+        var mouseOverUI = InputHelper.MouseOverUIObject();
 
-	public override void OrderedUpdate () {
-		bool mouseOverUI = InputHelper.MouseOverUIObject ();
+        if (!mouseOverUI)
+        {
+            HandlePinHighlighting();
 
-		if (!mouseOverUI) {
-			HandlePinHighlighting ();
+            switch (currentState)
+            {
+                case State.None:
+                    HandleWireHighlighting();
+                    HandleWireDeletion();
+                    HandleWireCreation();
+                    break;
+                case State.PlacingWire:
+                    HandleWirePlacement();
+                    break;
+            }
+        }
+    }
 
-			switch (currentState) {
-				case State.None:
-					HandleWireHighlighting ();
-					HandleWireDeletion ();
-					HandleWireCreation ();
-					break;
-				case State.PlacingWire:
-					HandleWirePlacement ();
-					break;
-			}
-		}
+    public void LoadWire(Wire wire)
+    {
+        wire.transform.parent = wireHolder;
+        allWires.Add(wire);
+        wiresByChipInputPin.Add(wire.ChipInputPin, wire);
+    }
 
-	}
+    private void HandleWireHighlighting()
+    {
+        var wireUnderMouse = InputHelper.GetObjectUnderMouse2D(wireMask);
+        if (wireUnderMouse && pinUnderMouse == null)
+        {
+            if (highlightedWire) highlightedWire.SetSelectionState(false);
+            highlightedWire = wireUnderMouse.GetComponent<Wire>();
+            highlightedWire.SetSelectionState(true);
+        }
+        else if (highlightedWire)
+        {
+            highlightedWire.SetSelectionState(false);
+            highlightedWire = null;
+        }
+    }
 
-	public void LoadWire (Wire wire) {
-		wire.transform.parent = wireHolder;
-		allWires.Add (wire);
-		wiresByChipInputPin.Add (wire.ChipInputPin, wire);
-	}
+    private void HandleWireDeletion()
+    {
+        if (highlightedWire)
+            if (InputHelper.AnyOfTheseKeysDown(KeyCode.Backspace, KeyCode.Delete))
+            {
+                RequestFocus();
+                if (HasFocus)
+                {
+                    DestroyWire(highlightedWire);
+                    onConnectionChanged?.Invoke();
+                }
+            }
+    }
 
-	void HandleWireHighlighting () {
-		var wireUnderMouse = InputHelper.GetObjectUnderMouse2D (wireMask);
-		if (wireUnderMouse && pinUnderMouse == null) {
-			if (highlightedWire) {
-				highlightedWire.SetSelectionState (false);
-			}
-			highlightedWire = wireUnderMouse.GetComponent<Wire> ();
-			highlightedWire.SetSelectionState (true);
+    private void HandleWirePlacement()
+    {
+        // Cancel placing wire
+        if (InputHelper.AnyOfTheseKeysDown(KeyCode.Escape, KeyCode.Backspace, KeyCode.Delete) ||
+            Input.GetMouseButtonDown(1))
+        {
+            StopPlacingWire();
+        }
+        // Update wire position and check if user wants to try connect the wire
+        else
+        {
+            var mousePos = InputHelper.MouseWorldPos;
 
-		} else if (highlightedWire) {
-			highlightedWire.SetSelectionState (false);
-			highlightedWire = null;
-		}
-	}
+            wireToPlace.UpdateWireEndPoint(mousePos);
 
-	void HandleWireDeletion () {
-		if (highlightedWire) {
-			if (InputHelper.AnyOfTheseKeysDown (KeyCode.Backspace, KeyCode.Delete)) {
-				RequestFocus ();
-				if (HasFocus) {
-					DestroyWire (highlightedWire);
-					onConnectionChanged?.Invoke ();
-				}
-			}
-		}
-	}
+            // Left mouse press
+            if (Input.GetMouseButtonDown(0))
+            {
+                // If mouse pressed over pin, try connecting the wire to that pin
+                if (pinUnderMouse)
+                    TryPlaceWire(wireStartPin, pinUnderMouse);
+                // If mouse pressed over empty space, add anchor point to wire
+                else
+                    wireToPlace.AddAnchorPoint(mousePos);
+            }
+            // Left mouse release
+            else if (Input.GetMouseButtonUp(0))
+            {
+                if (pinUnderMouse && pinUnderMouse != wireStartPin) TryPlaceWire(wireStartPin, pinUnderMouse);
+            }
+        }
+    }
 
-	void HandleWirePlacement () {
-		// Cancel placing wire
-		if (InputHelper.AnyOfTheseKeysDown (KeyCode.Escape, KeyCode.Backspace, KeyCode.Delete) || Input.GetMouseButtonDown (1)) {
-			StopPlacingWire ();
-		}
-		// Update wire position and check if user wants to try connect the wire
-		else {
-			Vector2 mousePos = InputHelper.MouseWorldPos;
+    public Wire GetWire(Pin childPin)
+    {
+        if (wiresByChipInputPin.ContainsKey(childPin)) return wiresByChipInputPin[childPin];
+        return null;
+    }
 
-			wireToPlace.UpdateWireEndPoint (mousePos);
+    private void TryPlaceWire(Pin startPin, Pin endPin)
+    {
+        if (Pin.IsValidConnection(startPin, endPin))
+        {
+            var chipInputPin = startPin.pinType == Pin.PinType.ChipInput ? startPin : endPin;
+            RemoveConflictingWire(chipInputPin);
 
-			// Left mouse press
-			if (Input.GetMouseButtonDown (0)) {
-				// If mouse pressed over pin, try connecting the wire to that pin
-				if (pinUnderMouse) {
-					TryPlaceWire (wireStartPin, pinUnderMouse);
-				}
-				// If mouse pressed over empty space, add anchor point to wire
-				else {
-					wireToPlace.AddAnchorPoint (mousePos);
-				}
-			}
-			// Left mouse release
-			else if (Input.GetMouseButtonUp (0)) {
-				if (pinUnderMouse && pinUnderMouse != wireStartPin) {
-					TryPlaceWire (wireStartPin, pinUnderMouse);
-				}
-			}
-		}
-	}
+            wireToPlace.Place(endPin);
+            Pin.MakeConnection(startPin, endPin);
+            allWires.Add(wireToPlace);
+            wiresByChipInputPin.Add(chipInputPin, wireToPlace);
+            wireToPlace = null;
+            currentState = State.None;
 
-	public Wire GetWire (Pin childPin) {
-		if (wiresByChipInputPin.ContainsKey (childPin)) {
-			return wiresByChipInputPin[childPin];
-		}
-		return null;
-	}
+            onConnectionChanged?.Invoke();
+        }
+        else
+        {
+            StopPlacingWire();
+        }
+    }
 
-	void TryPlaceWire (Pin startPin, Pin endPin) {
+    // Pin cannot have multiple inputs, so when placing a new wire, first remove the wire that already goes to that pin (if there is one)
+    private void RemoveConflictingWire(Pin chipInputPin)
+    {
+        if (wiresByChipInputPin.ContainsKey(chipInputPin)) DestroyWire(wiresByChipInputPin[chipInputPin]);
+    }
 
-		if (Pin.IsValidConnection (startPin, endPin)) {
-			Pin chipInputPin = (startPin.pinType == Pin.PinType.ChipInput) ? startPin : endPin;
-			RemoveConflictingWire (chipInputPin);
+    private void DestroyWire(Wire wire)
+    {
+        wiresByChipInputPin.Remove(wire.ChipInputPin);
+        allWires.Remove(wire);
+        Pin.RemoveConnection(wire.startPin, wire.endPin);
+        Destroy(wire.gameObject);
+    }
 
-			wireToPlace.Place (endPin);
-			Pin.MakeConnection (startPin, endPin);
-			allWires.Add (wireToPlace);
-			wiresByChipInputPin.Add (chipInputPin, wireToPlace);
-			wireToPlace = null;
-			currentState = State.None;
+    private void HandleWireCreation()
+    {
+        if (Input.GetMouseButtonDown(
+                0)) // Wire can be created from a pin, or from another wire (in which case it uses that wire's start pin)
+            if (pinUnderMouse || highlightedWire)
+            {
+                RequestFocus();
+                if (HasFocus)
+                {
+                    currentState = State.PlacingWire;
+                    wireToPlace = Instantiate(wirePrefab, wireHolder);
 
-			onConnectionChanged?.Invoke ();
-		} else {
-			StopPlacingWire ();
-		}
-	}
+                    // Creating new wire starting from pin
+                    if (pinUnderMouse)
+                    {
+                        wireStartPin = pinUnderMouse;
+                        wireToPlace.ConnectToFirstPin(wireStartPin);
+                    }
+                    // Creating new wire starting from existing wire
+                    else if (highlightedWire)
+                    {
+                        wireStartPin = highlightedWire.ChipOutputPin;
+                        wireToPlace.ConnectToFirstPinViaWire(wireStartPin, highlightedWire, InputHelper.MouseWorldPos);
+                    }
+                }
+            }
+    }
 
-	// Pin cannot have multiple inputs, so when placing a new wire, first remove the wire that already goes to that pin (if there is one)
-	void RemoveConflictingWire (Pin chipInputPin) {
-		if (wiresByChipInputPin.ContainsKey (chipInputPin)) {
-			DestroyWire (wiresByChipInputPin[chipInputPin]);
-		}
-	}
+    private void HandlePinHighlighting()
+    {
+        var mousePos = InputHelper.MouseWorldPos;
+        var pinCollider = Physics2D.OverlapCircle(mousePos, Pin.interactionRadius - Pin.radius, pinMask);
+        if (pinCollider)
+        {
+            var newPinUnderMouse = pinCollider.GetComponent<Pin>();
+            if (pinUnderMouse != newPinUnderMouse)
+            {
+                if (pinUnderMouse != null)
+                {
+                    pinUnderMouse.MouseExit();
+                    onMouseExitPin?.Invoke(pinUnderMouse);
+                }
 
-	void DestroyWire (Wire wire) {
-		wiresByChipInputPin.Remove (wire.ChipInputPin);
-		allWires.Remove (wire);
-		Pin.RemoveConnection (wire.startPin, wire.endPin);
-		Destroy (wire.gameObject);
-	}
+                newPinUnderMouse.MouseEnter();
+                pinUnderMouse = newPinUnderMouse;
+                onMouseOverPin?.Invoke(pinUnderMouse);
+            }
+        }
+        else
+        {
+            if (pinUnderMouse)
+            {
+                pinUnderMouse.MouseExit();
+                onMouseExitPin?.Invoke(pinUnderMouse);
+                pinUnderMouse = null;
+            }
+        }
+    }
 
-	void HandleWireCreation () {
-		if (Input.GetMouseButtonDown (0)) {
-			// Wire can be created from a pin, or from another wire (in which case it uses that wire's start pin)
-			if (pinUnderMouse || highlightedWire) {
-				RequestFocus ();
-				if (HasFocus) {
-					currentState = State.PlacingWire;
-					wireToPlace = Instantiate (wirePrefab, parent : wireHolder);
+    // Delete all wires connected to given chip
+    private void DeleteChipWires(Chip chip)
+    {
+        var wiresToDestroy = new List<Wire>();
 
-					// Creating new wire starting from pin
-					if (pinUnderMouse) {
-						wireStartPin = pinUnderMouse;
-						wireToPlace.ConnectToFirstPin (wireStartPin);
-					}
-					// Creating new wire starting from existing wire
-					else if (highlightedWire) {
-						wireStartPin = highlightedWire.ChipOutputPin;
-						wireToPlace.ConnectToFirstPinViaWire (wireStartPin, highlightedWire, InputHelper.MouseWorldPos);
-					}
-				}
-			}
-		}
-	}
+        foreach (var outputPin in chip.outputPins)
+        foreach (var childPin in outputPin.childPins)
+            wiresToDestroy.Add(wiresByChipInputPin[childPin]);
 
-	void HandlePinHighlighting () {
-		Vector2 mousePos = InputHelper.MouseWorldPos;
-		Collider2D pinCollider = Physics2D.OverlapCircle (mousePos, Pin.interactionRadius - Pin.radius, pinMask);
-		if (pinCollider) {
-			Pin newPinUnderMouse = pinCollider.GetComponent<Pin> ();
-			if (pinUnderMouse != newPinUnderMouse) {
-				if (pinUnderMouse != null) {
-					pinUnderMouse.MouseExit ();
-					onMouseExitPin?.Invoke (pinUnderMouse);
-				}
-				newPinUnderMouse.MouseEnter ();
-				pinUnderMouse = newPinUnderMouse;
-				onMouseOverPin?.Invoke (pinUnderMouse);
+        foreach (var inputPin in chip.inputPins)
+            if (inputPin.parentPin)
+                wiresToDestroy.Add(wiresByChipInputPin[inputPin]);
 
-			}
-		} else {
-			if (pinUnderMouse) {
-				pinUnderMouse.MouseExit ();
-				onMouseExitPin?.Invoke (pinUnderMouse);
-				pinUnderMouse = null;
-			}
-		}
-	}
+        for (var i = 0; i < wiresToDestroy.Count; i++) DestroyWire(wiresToDestroy[i]);
+        onConnectionChanged?.Invoke();
+    }
 
-	// Delete all wires connected to given chip
-	void DeleteChipWires (Chip chip) {
-		List<Wire> wiresToDestroy = new List<Wire> ();
+    private void StopPlacingWire()
+    {
+        if (wireToPlace)
+        {
+            Destroy(wireToPlace.gameObject);
+            wireToPlace = null;
+            wireStartPin = null;
+        }
 
-		foreach (var outputPin in chip.outputPins) {
-			foreach (var childPin in outputPin.childPins) {
-				wiresToDestroy.Add (wiresByChipInputPin[childPin]);
-			}
-		}
+        currentState = State.None;
+    }
 
-		foreach (var inputPin in chip.inputPins) {
-			if (inputPin.parentPin) {
-				wiresToDestroy.Add (wiresByChipInputPin[inputPin]);
-			}
-		}
+    protected override void FocusLost()
+    {
+        if (pinUnderMouse)
+        {
+            pinUnderMouse.MouseExit();
+            pinUnderMouse = null;
+        }
 
-		for (int i = 0; i < wiresToDestroy.Count; i++) {
-			DestroyWire (wiresToDestroy[i]);
-		}
-		onConnectionChanged?.Invoke ();
-	}
+        if (highlightedWire)
+        {
+            highlightedWire.SetSelectionState(false);
+            highlightedWire = null;
+        }
 
-	void StopPlacingWire () {
-		if (wireToPlace) {
-			Destroy (wireToPlace.gameObject);
-			wireToPlace = null;
-			wireStartPin = null;
-		}
-		currentState = State.None;
-	}
+        currentState = State.None;
+    }
 
-	protected override void FocusLost () {
-		if (pinUnderMouse) {
-			pinUnderMouse.MouseExit ();
-			pinUnderMouse = null;
-		}
+    protected override bool CanReleaseFocus()
+    {
+        if (currentState == State.PlacingWire || pinUnderMouse) return false;
 
-		if (highlightedWire) {
-			highlightedWire.SetSelectionState (false);
-			highlightedWire = null;
-		}
+        return true;
+    }
 
-		currentState = State.None;
-	}
-
-	protected override bool CanReleaseFocus () {
-		if (currentState == State.PlacingWire || pinUnderMouse) {
-			return false;
-		}
-
-		return true;
-	}
-
+    private enum State
+    {
+        None,
+        PlacingWire
+    }
 }

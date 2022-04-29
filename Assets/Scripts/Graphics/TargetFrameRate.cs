@@ -1,9 +1,9 @@
-﻿using System.Collections;
-using System.Collections.Generic;
-using UnityEngine;
+﻿using UnityEngine;
 
-public class TargetFrameRate : MonoBehaviour {
-	void Awake () {
-		Application.targetFrameRate = 60;
-	}
+public class TargetFrameRate : MonoBehaviour
+{
+    private void Awake()
+    {
+        Application.targetFrameRate = 60;
+    }
 }
